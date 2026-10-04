@@ -259,13 +259,15 @@
     const candidates = [];
     const cache = new Map();
 
-    // Depth 3 gives the planner one real move plus two layers of future
-    // consequences while remaining fast enough for an interactive game.
+    // Use a lighter search while the board is open, then spend more search
+    // time once the run becomes crowded and a bad move can kill the speedrun.
+    const searchDepth = emptyCount(board) >= 9 ? 2 : 3;
+
     for(const dir of DIRS){
       const result = move(board, dir);
       if(!result.changed) continue;
 
-      const future = expectimax(result.board, 3, cache);
+      const future = expectimax(result.board, searchDepth, cache);
       const maxAfter = maxTile(result.board);
       const progressBonus = maxAfter > maxTile(board)
         ? Math.log2(maxAfter) * 30
