@@ -73,72 +73,217 @@
     return {board:out,changed,gained};
   }
 
-  function emptyCount(b){return b.flat().filter(v=>v===0).length;}
+  // Speedrun planner:
+  // - Goal progress is the primary objective.
+  // - A stable corner/snake layout prevents the classic 256-tile trap.
+  // - Expectimax looks ahead through real 2/4 spawns.
+  // - Every legal move is compared by expected future progress, not by a
+  //   pre-recorded sequence. This keeps the agent responsive to randomness.
+
+  const SPEEDRUN_WEIGHTS = [
+    [65536, 32768, 16384, 8192],
+    [512, 1024, 2048, 4096],
+    [256, 128, 64, 32],
+    [2, 4, 8, 16]
+  ];
+
+  function emptyCount(b){
+    return b.flat().filter(v => v === 0).length;
+  }
+
+  function logTile(v){
+    return v ? Math.log2(v) : 0;
+  }
+
+  function maxTile(b){
+    return Math.max(...b.flat());
+  }
+
+  function mergePotential(b){
+    let potential = 0;
+    for(let r = 0; r < SIZE; r++){
+      for(let c = 0; c < SIZE; c++){
+        const v = b[r][c];
+        if(!v) continue;
+        if(c + 1 < SIZE && b[r][c + 1] === v) potential += logTile(v);
+        if(r + 1 < SIZE && b[r + 1][c] === v) potential += logTile(v);
+      }
+    }
+    return potential;
+  }
+
   function smoothness(b){
-    let value=0;
-    for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
-      if(!b[r][c])continue;
-      const a=Math.log2(b[r][c]);
-      if(c+1<SIZE&&b[r][c+1])value-=Math.abs(a-Math.log2(b[r][c+1]));
-      if(r+1<SIZE&&b[r+1][c])value-=Math.abs(a-Math.log2(b[r+1][c]));
+    let value = 0;
+    for(let r = 0; r < SIZE; r++){
+      for(let c = 0; c < SIZE; c++){
+        if(!b[r][c]) continue;
+        const a = logTile(b[r][c]);
+        if(c + 1 < SIZE && b[r][c + 1]) value -= Math.abs(a - logTile(b[r][c + 1]));
+        if(r + 1 < SIZE && b[r + 1][c]) value -= Math.abs(a - logTile(b[r + 1][c]));
+      }
     }
     return value;
   }
+
+  function speedrunShape(b){
+    let value = 0;
+    for(let r = 0; r < SIZE; r++){
+      for(let c = 0; c < SIZE; c++){
+        value += logTile(b[r][c]) * SPEEDRUN_WEIGHTS[r][c];
+      }
+    }
+    return value;
+  }
+
   function monotonicity(b){
-    let total=0;
-    for(let r=0;r<SIZE;r++){
-      let inc=0,dec=0;
-      for(let c=0;c<SIZE-1;c++){const a=b[r][c]?Math.log2(b[r][c]):0,d=b[r][c+1]?Math.log2(b[r][c+1]):0;if(a>d)inc+=a-d;else dec+=d-a;}
-      total+=Math.max(inc,dec);
+    let total = 0;
+
+    for(let r = 0; r < SIZE; r++){
+      let inc = 0, dec = 0;
+      for(let c = 0; c < SIZE - 1; c++){
+        const a = logTile(b[r][c]);
+        const d = logTile(b[r][c + 1]);
+        if(a > d) inc += a - d;
+        else dec += d - a;
+      }
+      total += Math.max(inc, dec);
     }
-    for(let c=0;c<SIZE;c++){
-      let inc=0,dec=0;
-      for(let r=0;r<SIZE-1;r++){const a=b[r][c]?Math.log2(b[r][c]):0,d=b[r+1][c]?Math.log2(b[r+1][c]):0;if(a>d)inc+=a-d;else dec+=d-a;}
-      total+=Math.max(inc,dec);
+
+    for(let c = 0; c < SIZE; c++){
+      let inc = 0, dec = 0;
+      for(let r = 0; r < SIZE - 1; r++){
+        const a = logTile(b[r][c]);
+        const d = logTile(b[r + 1][c]);
+        if(a > d) inc += a - d;
+        else dec += d - a;
+      }
+      total += Math.max(inc, dec);
     }
+
     return total;
   }
-  function cornerBonus(b){
-    const max=Math.max(...b.flat()), corners=[b[0][0],b[0][3],b[3][0],b[3][3]];
-    return corners.includes(max)?Math.log2(max)*3:0;
+
+  function goalProgress(b){
+    const max = maxTile(b);
+    if(max >= goal) return 1000000;
+    return Math.pow(Math.log2(Math.max(2, max)) / Math.log2(goal), 4) * 100;
   }
-  function evaluateBoard(b){
-    const values=b.flat(), max=Math.max(...values), logs=values.map(v=>v?Math.log2(v):0);
-    return emptyCount(b)*2.7 + smoothness(b)*0.15 + monotonicity(b)*1.0 + cornerBonus(b) + (max?Math.log2(max)*1.5:0);
+
+  function evaluateBoard(b, moveGain = 0){
+    const empty = emptyCount(b);
+    const max = maxTile(b);
+
+    // The coefficients deliberately put goal progress first. Empty space
+    // protects the run, while the snake shape keeps the largest tile anchored.
+    return (
+      goalProgress(b) * 12 +
+      Math.log2(Math.max(2, max)) * 35 +
+      empty * 24 +
+      speedrunShape(b) * 0.012 +
+      monotonicity(b) * 8 +
+      smoothness(b) * 2 +
+      mergePotential(b) * 18 +
+      moveGain * 0.08
+    );
   }
-  function expectimax(b, depth){
-    if(depth<=0) return evaluateBoard(b);
-    let best=-Infinity;
+
+  function boardKey(b){
+    return b.flat().join(",");
+  }
+
+  function spawnCandidates(b){
+    const empty = [];
+    for(let r = 0; r < SIZE; r++){
+      for(let c = 0; c < SIZE; c++){
+        if(!b[r][c]) empty.push([r,c]);
+      }
+    }
+
+    if(empty.length <= 4) return empty;
+
+    // Evaluate the most dangerous / most influential spawn squares instead
+    // of exploding the search tree over every empty cell.
+    return empty
+      .map(([r,c]) => ({
+        r, c,
+        priority: SPEEDRUN_WEIGHTS[r][c] + ((r === 0 || r === SIZE - 1) && (c === 0 || c === SIZE - 1) ? 50000 : 0)
+      }))
+      .sort((a,b) => b.priority - a.priority)
+      .slice(0, 4)
+      .map(p => [p.r,p.c]);
+  }
+
+  function expectimax(b, depth, cache){
+    if(depth <= 0) return evaluateBoard(b);
+
+    const key = boardKey(b) + "|" + depth;
+    if(cache.has(key)) return cache.get(key);
+
+    let best = -Infinity;
     for(const dir of DIRS){
-      const m=move(b,dir); if(!m.changed)continue;
-      let value=evaluateBoard(m.board);
-      if(depth>1){
-        const empties=[];
-        for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++)if(!m.board[r][c])empties.push([r,c]);
-        if(empties.length){
-          let chance=0;
-          const sample=empties.length>6?empties.filter((_,i)=>i%Math.ceil(empties.length/6)===0).slice(0,6):empties;
-          for(const [r,c] of sample){
-            const b2=clone(m.board);b2[r][c]=2;
-            const b4=clone(m.board);b4[r][c]=4;
-            chance += 0.9*expectimax(b2,depth-1)+0.1*expectimax(b4,depth-1);
+      const result = move(b, dir);
+      if(!result.changed) continue;
+
+      let value = evaluateBoard(result.board, result.gained);
+
+      if(depth > 1){
+        const candidates = spawnCandidates(result.board);
+        if(candidates.length){
+          let chance = 0;
+
+          for(const [r,c] of candidates){
+            const b2 = clone(result.board);
+            b2[r][c] = 2;
+            const b4 = clone(result.board);
+            b4[r][c] = 4;
+
+            chance += 0.9 * expectimax(b2, depth - 1, cache);
+            chance += 0.1 * expectimax(b4, depth - 1, cache);
           }
-          value += chance/sample.length*0.9;
+
+          value += chance / candidates.length;
         }
       }
-      best=Math.max(best,value);
+
+      // A speedrun wants progress with as few moves as possible.
+      value += Math.log2(Math.max(1, result.gained)) * 2;
+      best = Math.max(best, value);
     }
-    return best===-Infinity?evaluateBoard(b)-1000:best;
+
+    const finalValue = best === -Infinity ? -1000000 : best;
+    cache.set(key, finalValue);
+    return finalValue;
   }
+
   function chooseMove(){
-    let bestDir=null,best=-Infinity;
+    const candidates = [];
+    const cache = new Map();
+
+    // Depth 3 gives the planner one real move plus two layers of future
+    // consequences while remaining fast enough for an interactive game.
     for(const dir of DIRS){
-      const m=move(board,dir); if(!m.changed)continue;
-      let value=expectimax(m.board,2)+m.gained*0.05;
-      if(value>best){best=value;bestDir=dir;}
+      const result = move(board, dir);
+      if(!result.changed) continue;
+
+      const future = expectimax(result.board, 3, cache);
+      const maxAfter = maxTile(result.board);
+      const progressBonus = maxAfter > maxTile(board)
+        ? Math.log2(maxAfter) * 30
+        : 0;
+
+      candidates.push({
+        dir,
+        value: future + result.gained * 0.12 + progressBonus
+      });
     }
-    return {dir:bestDir,value:best};
+
+    candidates.sort((a,b) => b.value - a.value);
+
+    if(!candidates.length) return {dir:null, value:-Infinity};
+
+    return candidates[0];
   }
+
   function apply(dir){
     if(finished)return false;
     const result=move(board,dir); if(!result.changed)return false;
@@ -160,7 +305,7 @@
     if(finished)return;
     const decision=chooseMove();
     if(!decision.dir){finished=true;showOverlay("Game over","The agent has no legal move.");return;}
-    nextMove.textContent=decision.dir;evaluation.textContent=decision.value.toFixed(2);decisionText.textContent="Simulating candidate futures";
+    nextMove.textContent=decision.dir;evaluation.textContent=decision.value.toFixed(2);decisionText.textContent="Speedrun planner: comparing efficient futures";
     apply(decision.dir);
   }
   function start(){
