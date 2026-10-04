@@ -2,13 +2,27 @@
 
 A goal-driven game autoplayer prototype.
 
-## Phase 1
+## Phase 1 — 2048 speedrun agent
 
-- Selectable game architecture (2048 is the first game).
-- Configurable goal tile: 64 → 4096.
-- Autoplay, pause, single-step, reset.
-- A model-based 2048 decision engine using board evaluation + shallow expectimax.
-- No fixed move sequence: the agent evaluates the current board before every move.
+The first milestone is a selectable-game autoplayer with **2048** as the initial game.
+
+The goal is not simply to play indefinitely. The agent receives a target tile and must reach it using an efficient, adaptive strategy.
+
+### Current behavior
+
+- Select **2048** from the game selector.
+- Select a target from **64 → 4096**.
+- Start, pause, single-step, or reset the run.
+- Change autoplay speed.
+- The agent evaluates legal moves before every action.
+- The planner prioritizes **goal progress per move**, rather than following a fixed sequence.
+- The planner uses a stable high-tile corner/snake layout to reduce the common 2048 mid-game collapse.
+- The planner uses expectimax-style lookahead with possible `2` and `4` spawns.
+- Search is lighter when the board is open and deeper when the board becomes crowded.
+- The run stops immediately when the selected goal tile is reached.
+
+The important distinction is that the agent is **state-driven**: after every random tile spawn it observes the new board and recomputes its next move.
+
 
 ## Run
 
