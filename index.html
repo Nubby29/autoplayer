@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Game Autoplayer — goal-driven game automation prototype">
+  <title>Game Autoplayer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">AUTOPLAYER LAB · PHASE 1</p>
+        <h1>Game Autoplayer</h1>
+        <p class="subtitle">Choose a game, set a goal, and let the agent figure out the moves.</p>
+      </div>
+      <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Ready</span></div>
+    </header>
+
+    <section class="controls" aria-label="Autoplayer controls">
+      <label>
+        <span>Game</span>
+        <select id="gameSelect">
+          <option value="2048">2048</option>
+        </select>
+      </label>
+      <label>
+        <span>Goal tile</span>
+        <select id="goalSelect">
+          <option value="64">64</option>
+          <option value="128">128</option>
+          <option value="256">256</option>
+          <option value="512">512</option>
+          <option value="1024">1,024</option>
+          <option value="2048" selected>2,048</option>
+          <option value="4096">4,096</option>
+        </select>
+      </label>
+      <label>
+        <span>Speed</span>
+        <select id="speedSelect">
+          <option value="700">Slow</option>
+          <option value="300" selected>Normal</option>
+          <option value="90">Fast</option>
+          <option value="0">Instant</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="startBtn" class="primary">Start autoplay</button>
+        <button id="stepBtn">Step</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="game-panel">
+        <div class="board-wrap">
+          <div id="board" class="board" aria-label="2048 game board"></div>
+          <div id="overlay" class="overlay hidden">
+            <strong id="overlayTitle">Goal reached</strong>
+            <span id="overlayText"></span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side-panel">
+        <div class="metric"><span>Goal</span><strong id="goalMetric">2,048</strong></div>
+        <div class="metric"><span>Highest tile</span><strong id="highestMetric">0</strong></div>
+        <div class="metric"><span>Score</span><strong id="scoreMetric">0</strong></div>
+        <div class="metric"><span>Moves</span><strong id="movesMetric">0</strong></div>
+        <div class="agent-card">
+          <div class="agent-head"><span class="agent-icon">AI</span><div><strong>Decision engine</strong><small id="decisionText">Waiting for a board</small></div></div>
+          <div class="decision"><span>Next move</span><strong id="nextMove">—</strong></div>
+          <div class="decision"><span>Evaluation</span><strong id="evaluation">—</strong></div>
+        </div>
+        <details>
+          <summary>How this works</summary>
+          <p>The agent simulates possible moves, evaluates board quality, and chooses the move with the strongest expected outcome. It does not follow a fixed move sequence.</p>
+        </details>
+      </aside>
+    </section>
+
+    <footer>Phase 1 · 2048 goal-driven autoplayer · More games can be plugged into the same interface later.</footer>
+  </main>
+  <script src="./game.js"></script>
+</body>
+</html>
